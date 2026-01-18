@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OtoPark POS Sistemi - Offline</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --text: #0f172a;
+            --border: #e2e8f0;
+        }
+
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { margin: 0; padding: 0; background-color: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+
+        /* --- Layout --- */
+        header { background: var(--primary); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1, h2, h3 { margin: 0; }
+        .brand { font-size: 1.2rem; font-weight: bold; }
+        .user-info { font-size: 0.9rem; opacity: 0.9; }
+        main { flex: 1; padding: 1rem; overflow-y: auto; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+        /* --- Components --- */
+        .card { background: var(--card); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1.5rem; margin-bottom: 1rem; }
+        .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        
+        button { cursor: pointer; border: none; padding: 0.75rem 1rem; border-radius: 6px; font-weight: 600; transition: 0.2s; font-size: 1rem; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-secondary { background: var(--secondary); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-lg { padding: 1.5rem; font-size: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+
+        input, select, textarea { width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 1rem; font-size: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--secondary); }
+        
+        .hidden { display: none !important; }
+        
+        /* --- Login Screen --- */
+        #login-view { display: flex; align-items: center; justify-content: center; height: 100%; }
+        .login-box { width: 100%; max-width: 400px; }
+
+        /* --- Dashboard Stats --- */
+        .stat-card { text-align: center; border-left: 5px solid var(--primary); }
+        .stat-val { font-size: 2rem; font-weight: bold; color: var(--primary); }
+        .stat-label { color: var(--secondary); }
+
+        /* --- Tables --- */
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background: #f8fafc; font-weight: 600; }
+        tr:hover { background: #f8fafc; }
+
+        /* --- Status Badges --- */
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 600; }
+        .badge-open { background: #e0f2fe; color: #0284c7; }
+        .badge-paid { background: #dcfce7; color: #166534; }
+
+        /* --- Receipt / Print Modal --- */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .receipt-paper { background: #fff; width: 300px; padding: 20px; font-family: 'Courier New', Courier, monospace; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-height: 90vh; overflow-y: auto; }
+        .receipt-header { border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
+        .receipt-body { text-align: left; margin-bottom: 15px; }
+        .receipt-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .receipt-total { border-top: 2px dashed #000; padding-top: 10px; font-weight: bold; font-size: 1.2em; text-align: right; }
+        .barcode-box { border: 1px solid #000; padding: 5px; margin: 10px 0; font-weight: bold; letter-spacing: 2px; }
+        .print-actions { margin-top: 15px; display: flex; gap: 10px; flex-direction: column; }
+
+        /* --- Print CSS --- */
+        @media print {
+            body * { visibility: hidden; }
+            #receipt-container, #receipt-container * { visibility: visible; }
+            #receipt-container { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; box-shadow: none; }
+            .print-actions { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header id="app-header" class="hidden">
+        <div>
+            <div class="brand" id="header-parking-name">Otopark</div>
+            <small id="header-company">Firma: -</small>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <div class="user-info" id="header-operator">Op: -</div>
+            <button class="btn-secondary" style="padding: 0.5rem;" onclick="app.logout()">Çıkış</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- 1. Login View -->
+        <div id="login-view">
+            <div class="card login-box">
+                <h2 style="text-align: center; margin-bottom: 1.5rem; color: var(--primary);">Otopark Girişi</h2>
+                <form id="login-form">
+                    <label>Firma Kodu (Company ID)</label>
+                    <input type="text" id="login-company" placeholder="Örn: PARK1" required>
+                    <label>Operatör Adı</label>
+                    <input type="text" id="login-operator" placeholder="Adınız" required>
+                    <button type="submit" class="btn-primary" style="width: 100%;">Giriş Yap</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 2. Dashboard View -->
+        <div id="dashboard-view" class="hidden">
+            <div class="grid" style="margin-bottom: 2rem;">
+                <div class="stat-card card">
+                    <div class="stat-val" id="stat-open">0</div>
+                    <div class="stat-label">İçerdeki Araç</div>
+                </div>
+                <div class="stat-card card">
+                    <div class="stat-val" id="stat-today-count">0</div>
+                    <div class="stat-label">Bugün Çıkan</div>
+                </div>
+                <div class="stat-card card">
+                    <div class="stat-val" id="stat-revenue">0.00 ₺</div>
+                    <div class="stat-label">Bugünkü Hasılat</div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <button class="btn-primary btn-lg" onclick="app.navTo('entry')">
+                    <span>🚙</span> Yeni Araç Girişi
+                </button>
+                <button class="btn-success btn-lg" onclick="app.navTo('exit')">
+                    <span>💰</span> Araç Çıkışı / Ödeme
+                </button>
+                <button class="btn-secondary btn-lg" onclick="app.navTo('reports')">
+                    <span>📊</span> Raporlar
+                </button>
+                <button class="btn-secondary btn-lg" onclick="app.navTo('settings')">
+                    <span>⚙️</span> Ayarlar
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. Entry View -->
+        <div id="entry-view" class="hidden">
+            <button class="btn-secondary" onclick="app.navTo('dashboard')">« Geri</button>
+            <div class="card" style="margin-top: 1rem; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <h2>Yeni Araç Girişi</h2>
+                <form id="entry-form" style="margin-top: 1rem;">
+                    <label>Plaka (Zorunlu)</label>
+                    <input type="text" id="entry-plate" placeholder="34ABC123" required autocomplete="off" style="text-transform: uppercase; font-size: 1.5rem; letter-spacing: 2px;">
+                    
+                    <label>Araç Tipi</label>
+                    <select id="entry-type" required></select>
+                    
+                    <label>Notlar (Opsiyonel)</label>
+                    <input type="text" id="entry-note" placeholder="Hasar, renk vb.">
+
+                    <button type="submit" class="btn-primary" style="width: 100%; padding: 1rem; font-size: 1.2rem;">Fiş Oluştur (Giriş)</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 4. Exit / Payment View -->
+        <div id="exit-view" class="hidden">
+            <button class="btn-secondary" onclick="app.navTo('dashboard')">« Geri</button>
+            <div class="grid" style="margin-top: 1rem; grid-template-columns: 1fr 1fr;">
+                <!-- Search -->
+                <div class="card">
+                    <h3>Fiş Sorgula</h3>
+                    <form id="exit-search-form" style="margin-top: 1rem;">
+                        <label>Fiş Numarası veya Plaka</label>
+                        <input type="text" id="exit-search-input" placeholder="P-2023... veya Plaka" style="text-transform: uppercase;" required>
+                        <button type="submit" class="btn-primary" style="width: 100%;">Bul</button>
+                    </form>
+                    <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #eee;">
+                    <button class="btn-danger" onclick="app.handleLostTicket()" style="width: 100%;">Kayıp Fiş İşlemi</button>
+                </div>
+
+                <!-- Details & Payment -->
+                <div class="card" id="payment-panel" style="opacity: 0.5; pointer-events: none;">
+                    <h3>Ödeme Detayları</h3>
+                    <div id="payment-details" style="margin: 1rem 0; min-height: 100px;">
+                        <p style="color: #666;">Lütfen önce fiş sorgulayın.</p>
+                    </div>
+                    
+                    <form id="payment-form" class="hidden">
+                        <input type="hidden" id="pay-ticket-id">
+                        <div style="background: #f0fdf4; padding: 10px; border-radius: 6px; margin-bottom: 10px; border: 1px solid #bbf7d0;">
+                            <label style="color: #166534;">Hesaplanan Tutar</label>
+                            <div id="pay-calc-amount" style="font-size: 1.5rem; font-weight: bold; color: #166534;">0.00</div>
+                        </div>
+
+                        <label>Tahsil Edilen Tutar</label>
+                        <input type="number" step="0.5" id="pay-amount" required>
+
+                        <label>Ödeme Yöntemi</label>
+                        <select id="pay-method">
+                            <option value="CASH">Nakit</option>
+                            <option value="CARD">Kredi Kartı</option>
+                            <option value="TRANSFER">Havale/EFT</option>
+                        </select>
+
+                        <button type="submit" class="btn-success" style="width: 100%; padding: 1rem; font-size: 1.2rem;">Ödemeyi Tamamla & Çıkış</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. Settings View -->
+        <div id="settings-view" class="hidden">
+            <button class="btn-secondary" onclick="app.navTo('dashboard')">« Geri</button>
+            <div class="card" style="margin-top: 1rem;">
+                <h2>Fiyatlandırma & Ayarlar</h2>
+                <form id="settings-form">
+                    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                        <div>
+                            <label>Otopark Adı</label>
+                            <input type="text" id="set-name" required>
+                        </div>
+                        <div>
+                            <label>Para Birimi</label>
+                            <input type="text" id="set-currency" value="TRY" required>
+                        </div>
+                    </div>
+                    <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                        <div>
+                            <label>Ücretsiz Süre (Dk)</label>
+                            <input type="number" id="set-grace" value="0">
+                        </div>
+                        <div>
+                            <label>Yuvarlama</label>
+                            <select id="set-rounding">
+                                <option value="NONE">Yok (Tam Tutar)</option>
+                                <option value="ROUND_UP_1">1 TL ve katları</option>
+                                <option value="ROUND_UP_5">5 TL ve katları</option>
+                                <option value="ROUND_UP_10">10 TL ve katları</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Kayıp Fiş Ücreti</label>
+                            <input type="number" id="set-lost-fee" value="50">
+                        </div>
+                    </div>
+
+                    <h3>Araç Tipleri ve Fiyatlar</h3>
+                    <div id="rules-container"></div>
+                    <button type="button" class="btn-secondary" onclick="app.addRuleRow()" style="margin-top: 10px;">+ Araç Tipi Ekle</button>
+
+                    <hr style="margin: 2rem 0;">
+                    <button type="submit" class="btn-primary">Ayarları Kaydet</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 6. Reports View -->
+        <div id="reports-view" class="hidden">
+            <button class="btn-secondary" onclick="app.navTo('dashboard')">« Geri</button>
+            <div class="card" style="margin-top: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <h2>Günlük Rapor</h2>
+                    <div style="display: flex; gap: 5px;">
+                        <input type="date" id="report-date" style="width: auto; margin: 0;">
+                        <button class="btn-primary" onclick="app.loadReports()">Getir</button>
+                    </div>
+                </div>
+                
+                <div class="grid" style="margin-top: 1rem;">
+                    <div style="background: #eff6ff; padding: 1rem; border-radius: 8px;">
+                        <small>Toplam Hasılat (Tahsilat)</small>
+                        <div id="rep-total-rev" style="font-size: 1.5rem; font-weight: bold;">0.00</div>
+                    </div>
+                    <div style="background: #f0fdf4; padding: 1rem; border-radius: 8px;">
+                        <small>Ödenen / Çıkan Araç</small>
+                        <div id="rep-paid-count" style="font-size: 1.5rem; font-weight: bold;">0</div>
+                    </div>
+                    <div style="background: #fff7ed; padding: 1rem; border-radius: 8px;">
+                        <small>İçerdeki Araç Sayısı</small>
+                        <div id="rep-open-count" style="font-size: 1.5rem; font-weight: bold; color: #c2410c;">0</div>
+                    </div>
+                </div>
+
+                <h3>İşlem Listesi (Çıkanlar & İçerdekiler)</h3>
+                <div style="overflow-x: auto;">
+                    <table id="report-table">
+                        <thead>
+                            <tr>
+                                <th>Durum</th>
+                                <th>Fiş No</th>
+                                <th>Plaka</th>
+                                <th>Giriş</th>
+                                <th>Çıkış</th>
+                                <th>Süre</th>
+                                <th>Tutar</th>
+                                <th>Tip</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div style="margin-top: 2rem;">
+                    <h3>Veri Yönetimi</h3>
+                    <button class="btn-secondary" onclick="app.exportData()">💾 JSON Dışa Aktar (Yedek)</button>
+                    <label for="import-file" class="btn-secondary" style="display: inline-block; width: auto; margin-left: 10px; margin-bottom: 0;">📂 JSON İçe Aktar</label>
+                    <input type="file" id="import-file" class="hidden" onchange="app.importData(this)">
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Print Modal -->
+    <div id="print-modal" class="hidden modal-overlay">
+        <div class="receipt-paper" id="receipt-container">
+            <div class="receipt-header">
+                <h3 id="p-parking-name">OTOPARK ADI</h3>
+                <div id="p-datetime">DD.MM.YYYY HH:MM</div>
+            </div>
+            
+            <div class="receipt-body" id="p-body">
+                <!-- Dynamic Content -->
+            </div>
+
+            <div class="barcode-box" id="p-barcode">
+                P-123456
+            </div>
+            
+            <div id="p-footer" style="font-size: 0.8em; margin-top: 10px;">
+                Teşekkürler, iyi yolculuklar.
+            </div>
+
+            <div class="print-actions">
+                <button class="btn-primary" onclick="window.print()">🖨️ Yazdır</button>
+                <button class="btn-secondary" onclick="app.closePrintModal()">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Database Layer (IndexedDB Wrapper)
+         */
+        class ParkingDB {
+            constructor() {
+                this.dbName = 'ParkingAppDB';
+                this.dbVersion = 1;
+                this.db = null;
+            }
+
+            async open() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, this.dbVersion);
+
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('settings')) {
+                            db.createObjectStore('settings', { keyPath: 'companyId' });
+                        }
+                        if (!db.objectStoreNames.contains('tickets')) {
+                            const store = db.createObjectStore('tickets', { keyPath: 'id' });
+                            store.createIndex('companyId', 'companyId', { unique: false });
+                            store.createIndex('ticketNo', 'ticketNo', { unique: false });
+                            store.createIndex('status', 'status', { unique: false });
+                            store.createIndex('exitTime', 'exitTime', { unique: false });
+                        }
+                        if (!db.objectStoreNames.contains('counters')) {
+                            db.createObjectStore('counters', { keyPath: 'id' });
+                        }
+                    };
+
+                    request.onsuccess = (e) => {
+                        this.db = e.target.result;
+                        resolve(this.db);
+                    };
+                    request.onerror = (e) => reject(e);
+                });
+            }
+
+            // --- Generic Helpers ---
+            transaction(storeNames, mode) {
+                return this.db.transaction(storeNames, mode);
+            }
+
+            // --- Settings ---
+            async getSettings(companyId) {
+                return new Promise((resolve) => {
+                    const tx = this.transaction(['settings'], 'readonly');
+                    const req = tx.objectStore('settings').get(companyId);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => resolve(null);
+                });
+            }
+
+            async saveSettings(settings) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.transaction(['settings'], 'readwrite');
+                    tx.objectStore('settings').put(settings);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject();
+                });
+            }
+
+            // --- Tickets ---
+            async createTicket(ticketData) {
+                return new Promise(async (resolve, reject) => {
+                    try {
+                        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                        const counterId = `${ticketData.companyId}_${dateStr}`;
+                        
+                        const tx = this.transaction(['counters', 'tickets'], 'readwrite');
+                        const counterStore = tx.objectStore('counters');
+                        const ticketStore = tx.objectStore('tickets');
+
+                        const counterReq = counterStore.get(counterId);
+                        
+                        counterReq.onsuccess = () => {
+                            let seq = 1;
+                            if (counterReq.result) {
+                                seq = counterReq.result.seq + 1;
+                            }
+                            counterStore.put({ id: counterId, seq: seq });
+
+                            const seqStr = seq.toString().padStart(4, '0');
+                            ticketData.ticketNo = `P-${dateStr}-${seqStr}`;
+                            
+                            ticketStore.add(ticketData);
+                        };
+
+                        tx.oncomplete = () => resolve(ticketData);
+                        tx.onerror = (e) => reject(e);
+
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            }
+
+            async updateTicket(ticket) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.transaction(['tickets'], 'readwrite');
+                    tx.objectStore('tickets').put(ticket);
+                    tx.oncomplete = () => resolve(ticket);
+                    tx.onerror = () => reject();
+                });
+            }
+
+            async getTicketByNo(companyId, ticketNo) {
+                return new Promise((resolve) => {
+                    const tx = this.transaction(['tickets'], 'readonly');
+                    const store = tx.objectStore('tickets');
+                    const index = store.index('ticketNo');
+                    const req = index.getAll(IDBKeyRange.only(ticketNo)); 
+
+                    req.onsuccess = () => {
+                        const results = req.result.filter(t => t.companyId === companyId);
+                        resolve(results.length > 0 ? results[0] : null);
+                    };
+                });
+            }
+            
+            async getTicketByPlate(companyId, plate) {
+                 return new Promise((resolve) => {
+                    const tx = this.transaction(['tickets'], 'readonly');
+                    const store = tx.objectStore('tickets');
+                    const req = store.getAll(); 
+                    req.onsuccess = () => {
+                        const res = req.result.filter(t => 
+                            t.companyId === companyId && 
+                            t.plate === plate && 
+                            t.status === 'OPEN'
+                        );
+                        resolve(res.length > 0 ? res[res.length - 1] : null);
+                    };
+                });
+            }
+
+            async getOpenTickets(companyId) {
+                return new Promise((resolve) => {
+                    const tx = this.transaction(['tickets'], 'readonly');
+                    const index = tx.objectStore('tickets').index('status');
+                    const req = index.getAll('OPEN');
+                    req.onsuccess = () => {
+                        resolve(req.result.filter(t => t.companyId === companyId));
+                    };
+                });
+            }
+
+            async getDailyReport(companyId, dateStr) {
+                // dateStr format: YYYY-MM-DD
+                return new Promise((resolve) => {
+                    const tx = this.transaction(['tickets'], 'readonly');
+                    const store = tx.objectStore('tickets');
+                    const req = store.getAll();
+                    
+                    req.onsuccess = () => {
+                        // User Input Date Components (Local day)
+                        const [y, m, d] = dateStr.split('-').map(Number);
+
+                        const filtered = req.result.filter(t => {
+                            if (t.companyId !== companyId) return false;
+                            
+                            // 1. Show ALL inside vehicles regardless of date
+                            if (t.status === 'OPEN') return true;
+
+                            // 2. Show PAID vehicles only if exit time matches selected date (Local)
+                            if (t.status === 'PAID' && t.exitTime) {
+                                const et = new Date(t.exitTime);
+                                // Check if exit local date matches input YYYY-MM-DD
+                                if (et.getFullYear() === y && (et.getMonth() + 1) === m && et.getDate() === d) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        });
+                        
+                        // Sort: OPEN tickets first, then by Exit time
+                        filtered.sort((a, b) => {
+                            if (a.status === 'OPEN' && b.status !== 'OPEN') return -1;
+                            if (a.status !== 'OPEN' && b.status === 'OPEN') return 1;
+                            // Both PAID: sort by exit desc
+                            if (a.status === 'PAID' && b.status === 'PAID') {
+                                return new Date(b.exitTime) - new Date(a.exitTime);
+                            }
+                            // Both OPEN: sort by entry desc
+                            return new Date(b.entryTime) - new Date(a.entryTime);
+                        });
+
+                        resolve(filtered);
+                    };
+                });
+            }
+
+            async exportAll(companyId) {
+                const settings = await this.getSettings(companyId);
+                return new Promise(resolve => {
+                    const tx = this.transaction(['tickets'], 'readonly');
+                    const req = tx.objectStore('tickets').getAll();
+                    req.onsuccess = () => {
+                        const tickets = req.result.filter(t => t.companyId === companyId);
+                        resolve({ settings, tickets });
+                    };
+                });
+            }
+        }
+
+        /**
+         * Core Logic
+         */
+        class FeeCalculator {
+            static calculate(ticket, rules, settings) {
+                const now = new Date();
+                const entry = new Date(ticket.entryTime);
+                const diffMs = now - entry;
+                const diffMins = Math.floor(diffMs / 60000);
+
+                if (settings.graceMinutes && diffMins <= settings.graceMinutes) {
+                    return { fee: 0, duration: diffMins, breakdown: "Ücretsiz Süre" };
+                }
+
+                const rule = rules.find(r => r.id === ticket.vehicleTypeId);
+                if (!rule) return { fee: 0, duration: diffMins, breakdown: "Kural Bulunamadı" };
+
+                let fee = rule.baseFee;
+                let hours = 0;
+                if (rule.pricingMode === 'PER_STARTED_HOUR') {
+                    hours = Math.ceil(diffMins / 60);
+                } else {
+                    hours = Math.floor(diffMins / 60);
+                }
+                
+                fee = rule.baseFee + (rule.hourlyFee * hours);
+
+                if (rule.dailyMax && fee > rule.dailyMax) {
+                    fee = rule.dailyMax;
+                }
+
+                if (settings.roundingPolicy) {
+                    if (settings.roundingPolicy === 'ROUND_UP_1') fee = Math.ceil(fee);
+                    if (settings.roundingPolicy === 'ROUND_UP_5') fee = Math.ceil(fee / 5) * 5;
+                    if (settings.roundingPolicy === 'ROUND_UP_10') fee = Math.ceil(fee / 10) * 10;
+                }
+
+                return { fee, duration: diffMins, breakdown: `${hours} Saat x ${rule.hourlyFee} + Giriş` };
+            }
+        }
+
+        /**
+         * Application State & UI Manager
+         */
+        class App {
+            constructor() {
+                this.db = new ParkingDB();
+                this.state = {
+                    companyId: null,
+                    operator: null,
+                    settings: null,
+                    currentTicket: null 
+                };
+                this.defaultRules = [
+                    { id: 'CAR', label: 'Otomobil', baseFee: 20, hourlyFee: 10, pricingMode: 'PER_STARTED_HOUR', dailyMax: 100 },
+                    { id: 'TRUCK', label: 'Kamyon/Otobüs', baseFee: 50, hourlyFee: 25, pricingMode: 'PER_STARTED_HOUR', dailyMax: 250 },
+                    { id: 'MOTO', label: 'Motosiklet', baseFee: 10, hourlyFee: 5, pricingMode: 'PER_STARTED_HOUR', dailyMax: 50 }
+                ];
+            }
+
+            // --- Helper for Local Date String (YYYY-MM-DD) ---
+            getLocalDateString() {
+                const d = new Date();
+                const year = d.getFullYear();
+                const month = ('0' + (d.getMonth() + 1)).slice(-2);
+                const day = ('0' + d.getDate()).slice(-2);
+                return `${year}-${month}-${day}`;
+            }
+
+            async init() {
+                await this.db.open();
+                const savedCo = localStorage.getItem('companyId');
+                const savedOp = localStorage.getItem('operator');
+                if (savedCo && savedOp) {
+                    this.login(savedCo, savedOp);
+                }
+            }
+
+            async login(companyId, operator) {
+                this.state.companyId = companyId.toUpperCase();
+                this.state.operator = operator;
+                
+                let settings = await this.db.getSettings(this.state.companyId);
+                if (!settings) {
+                    settings = {
+                        companyId: this.state.companyId,
+                        parkingName: 'Otoparkım',
+                        currency: 'TRY',
+                        graceMinutes: 15,
+                        lostTicketFee: 100,
+                        roundingPolicy: 'ROUND_UP_5',
+                        pricingRules: this.defaultRules
+                    };
+                    await this.db.saveSettings(settings);
+                }
+                this.state.settings = settings;
+
+                localStorage.setItem('companyId', this.state.companyId);
+                localStorage.setItem('operator', this.state.operator);
+                
+                document.getElementById('header-parking-name').textContent = settings.parkingName;
+                document.getElementById('header-company').textContent = `Firma: ${this.state.companyId}`;
+                document.getElementById('header-operator').textContent = `Op: ${this.state.operator}`;
+                
+                document.getElementById('app-header').classList.remove('hidden');
+                document.getElementById('login-view').classList.add('hidden');
+                this.navTo('dashboard');
+            }
+
+            logout() {
+                localStorage.clear();
+                location.reload();
+            }
+
+            async navTo(viewId) {
+                ['dashboard', 'entry', 'exit', 'settings', 'reports'].forEach(v => {
+                    document.getElementById(v + '-view').classList.add('hidden');
+                });
+                
+                document.getElementById(viewId + '-view').classList.remove('hidden');
+
+                if (viewId === 'dashboard') this.loadDashboard();
+                if (viewId === 'entry') this.loadEntryScreen();
+                if (viewId === 'exit') this.loadExitScreen();
+                if (viewId === 'settings') this.loadSettingsScreen();
+                if (viewId === 'reports') {
+                    // Set default date to LOCAL today
+                    document.getElementById('report-date').value = this.getLocalDateString();
+                    this.loadReports();
+                }
+            }
+
+            async loadDashboard() {
+                const openTickets = await this.db.getOpenTickets(this.state.companyId);
+                document.getElementById('stat-open').textContent = openTickets.length;
+
+                // FIX: Use local date string instead of UTC to avoid mismatch
+                const todayStr = this.getLocalDateString();
+                const reportData = await this.db.getDailyReport(this.state.companyId, todayStr);
+                const paidTx = reportData.filter(t => t.status === 'PAID');
+                
+                const revenue = paidTx.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
+                document.getElementById('stat-revenue').textContent = revenue.toFixed(2) + ' ₺';
+                document.getElementById('stat-today-count').textContent = paidTx.length;
+            }
+
+            loadEntryScreen() {
+                const select = document.getElementById('entry-type');
+                select.innerHTML = '';
+                this.state.settings.pricingRules.forEach(r => {
+                    const opt = document.createElement('option');
+                    opt.value = r.id;
+                    opt.textContent = `${r.label} (Başlangıç: ${r.baseFee})`;
+                    select.appendChild(opt);
+                });
+                document.getElementById('entry-plate').value = '';
+                document.getElementById('entry-note').value = '';
+                setTimeout(() => document.getElementById('entry-plate').focus(), 100);
+            }
+
+            async handleEntry(e) {
+                e.preventDefault();
+                const plate = document.getElementById('entry-plate').value.toUpperCase().replace(/\s/g,'');
+                const typeId = document.getElementById('entry-type').value;
+                const note = document.getElementById('entry-note').value;
+
+                const existing = await this.db.getTicketByPlate(this.state.companyId, plate);
+                if (existing) {
+                    alert(`Bu plaka (${plate}) zaten içeride görünüyor! Fiş: ${existing.ticketNo}`);
+                    return;
+                }
+
+                const newTicket = {
+                    id: crypto.randomUUID(),
+                    companyId: this.state.companyId,
+                    plate: plate,
+                    vehicleTypeId: typeId,
+                    entryTime: new Date().toISOString(),
+                    status: 'OPEN',
+                    notes: note
+                };
+
+                try {
+                    const saved = await this.db.createTicket(newTicket);
+                    this.showPrintModal('ENTRY', saved);
+                    this.loadEntryScreen(); 
+                } catch(err) {
+                    console.error(err);
+                    alert('Kayıt hatası!');
+                }
+            }
+
+            loadExitScreen() {
+                document.getElementById('exit-search-input').value = '';
+                document.getElementById('payment-panel').style.opacity = '0.5';
+                document.getElementById('payment-panel').style.pointerEvents = 'none';
+                document.getElementById('payment-form').classList.add('hidden');
+                document.getElementById('payment-details').innerHTML = '<p style="color: #666;">Lütfen önce fiş sorgulayın.</p>';
+                setTimeout(() => document.getElementById('exit-search-input').focus(), 100);
+            }
+
+            async handleSearch(e) {
+                e.preventDefault();
+                const q = document.getElementById('exit-search-input').value.trim().toUpperCase();
+                
+                let ticket = null;
+                if (q.startsWith('P-')) {
+                    ticket = await this.db.getTicketByNo(this.state.companyId, q);
+                } else {
+                    ticket = await this.db.getTicketByPlate(this.state.companyId, q);
+                }
+
+                if (!ticket) {
+                    alert('Fiş veya araç bulunamadı!');
+                    return;
+                }
+                
+                if (ticket.status !== 'OPEN') {
+                    alert('Bu fiş zaten ödenmiş veya iptal edilmiş.');
+                    return;
+                }
+
+                this.setupPayment(ticket);
+            }
+
+            setupPayment(ticket) {
+                this.state.currentTicket = ticket;
+                
+                const calc = FeeCalculator.calculate(ticket, this.state.settings.pricingRules, this.state.settings);
+                
+                const html = `
+                    <div style="font-size:1.1rem">
+                        <strong>Plaka:</strong> ${ticket.plate}<br>
+                        <strong>Giriş:</strong> ${new Date(ticket.entryTime).toLocaleString('tr-TR')}<br>
+                        <strong>Süre:</strong> ${calc.duration} dk<br>
+                        <strong>Tarife:</strong> ${this.state.settings.pricingRules.find(r=>r.id===ticket.vehicleTypeId)?.label}
+                    </div>
+                `;
+                
+                document.getElementById('payment-details').innerHTML = html;
+                document.getElementById('pay-calc-amount').textContent = calc.fee.toFixed(2) + ' ' + this.state.settings.currency;
+                document.getElementById('pay-amount').value = calc.fee;
+                document.getElementById('pay-ticket-id').value = ticket.id;
+
+                const panel = document.getElementById('payment-panel');
+                panel.style.opacity = '1';
+                panel.style.pointerEvents = 'auto';
+                document.getElementById('payment-form').classList.remove('hidden');
+                setTimeout(() => document.getElementById('pay-amount').focus(), 100);
+            }
+
+            async handlePayment(e) {
+                e.preventDefault();
+                if (!this.state.currentTicket) return;
+
+                const amount = parseFloat(document.getElementById('pay-amount').value);
+                const method = document.getElementById('pay-method').value;
+
+                const t = this.state.currentTicket;
+                t.status = 'PAID';
+                t.exitTime = new Date().toISOString();
+                t.paidAmount = amount;
+                t.paymentMethod = method;
+                t.durationMinutes = Math.floor((new Date() - new Date(t.entryTime)) / 60000);
+
+                await this.db.updateTicket(t);
+                
+                this.showPrintModal('EXIT', t);
+                this.loadExitScreen();
+            }
+
+            async handleLostTicket() {
+                if(!confirm('Kayıp Fiş prosedürü uygulanacak. Emin misiniz?')) return;
+                
+                const plate = prompt("Araç Plakası:");
+                if(!plate) return;
+
+                const fee = this.state.settings.lostTicketFee;
+                
+                const ticket = {
+                    id: crypto.randomUUID(),
+                    companyId: this.state.companyId,
+                    plate: plate.toUpperCase(),
+                    vehicleTypeId: 'UNKNOWN',
+                    entryTime: new Date().toISOString(),
+                    status: 'PAID',
+                    exitTime: new Date().toISOString(),
+                    paidAmount: fee,
+                    paymentMethod: 'CASH',
+                    notes: 'KAYIP FİŞ',
+                    ticketNo: 'LOST-' + Date.now().toString().slice(-6)
+                };
+
+                await this.db.createTicket(ticket); 
+                alert(`Kayıp fiş kaydedildi. Tahsil edilecek tutar: ${fee} TL`);
+                this.loadDashboard();
+            }
+
+            async loadReports() {
+                const dateVal = document.getElementById('report-date').value;
+                const txs = await this.db.getDailyReport(this.state.companyId, dateVal);
+                
+                const tbody = document.querySelector('#report-table tbody');
+                tbody.innerHTML = '';
+                
+                let total = 0;
+                let paidCount = 0;
+                let openCount = 0;
+                
+                txs.forEach(t => {
+                    let statusBadge = '';
+                    let exitDisplay = '-';
+                    let amountDisplay = '-';
+
+                    if (t.status === 'OPEN') {
+                        statusBadge = '<span class="badge badge-open">İÇERDE</span>';
+                        openCount++;
+                        // Calculate duration on the fly for display
+                        const diffMins = Math.floor((new Date() - new Date(t.entryTime)) / 60000);
+                        t.durationMinutes = diffMins;
+                    } else {
+                        statusBadge = '<span class="badge badge-paid">ÇIKIŞ YAPTI</span>';
+                        total += (t.paidAmount || 0);
+                        paidCount++;
+                        exitDisplay = new Date(t.exitTime).toLocaleTimeString('tr-TR');
+                        amountDisplay = (t.paidAmount||0).toFixed(2);
+                    }
+
+                    const row = `
+                        <tr>
+                            <td>${statusBadge}</td>
+                            <td>${t.ticketNo}</td>
+                            <td>${t.plate}</td>
+                            <td>${new Date(t.entryTime).toLocaleTimeString('tr-TR')}</td>
+                            <td>${exitDisplay}</td>
+                            <td>${t.durationMinutes} dk</td>
+                            <td>${amountDisplay}</td>
+                            <td>${t.vehicleTypeId}</td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+
+                document.getElementById('rep-total-rev').textContent = total.toFixed(2) + ' ' + this.state.settings.currency;
+                document.getElementById('rep-paid-count').textContent = paidCount;
+                document.getElementById('rep-open-count').textContent = openCount;
+            }
+
+            async exportData() {
+                const data = await this.db.exportAll(this.state.companyId);
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type : 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Otopark_Yedek_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+            }
+
+            importData(input) {
+                const file = input.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (data.settings && data.settings.companyId === this.state.companyId) {
+                            await this.db.saveSettings(data.settings);
+                            for (const t of data.tickets) {
+                                await this.db.updateTicket(t);
+                            }
+                            alert('Veriler başarıyla yüklendi.');
+                            location.reload();
+                        } else {
+                            alert('Hatalı dosya veya farklı firma verisi.');
+                        }
+                    } catch(err) {
+                        alert('Dosya okuma hatası.');
+                    }
+                };
+                reader.readAsText(file);
+            }
+
+            loadSettingsScreen() {
+                const s = this.state.settings;
+                document.getElementById('set-name').value = s.parkingName;
+                document.getElementById('set-currency').value = s.currency;
+                document.getElementById('set-grace').value = s.graceMinutes;
+                document.getElementById('set-rounding').value = s.roundingPolicy;
+                document.getElementById('set-lost-fee').value = s.lostTicketFee;
+
+                this.renderRulesTable();
+            }
+
+            renderRulesTable() {
+                const container = document.getElementById('rules-container');
+                container.innerHTML = '';
+                
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <thead><tr><th>Tip Adı</th><th>Başlangıç</th><th>Saatlik</th><th>Mod</th><th>Max</th><th>Sil</th></tr></thead>
+                    <tbody id="rules-tbody"></tbody>
+                `;
+                container.appendChild(table);
+                
+                const tbody = table.querySelector('tbody');
+                this.state.settings.pricingRules.forEach((r, idx) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><input type="text" value="${r.label}" onchange="app.updateRule(${idx}, 'label', this.value)"></td>
+                        <td><input type="number" value="${r.baseFee}" style="width:70px" onchange="app.updateRule(${idx}, 'baseFee', this.value)"></td>
+                        <td><input type="number" value="${r.hourlyFee}" style="width:70px" onchange="app.updateRule(${idx}, 'hourlyFee', this.value)"></td>
+                        <td>
+                            <select onchange="app.updateRule(${idx}, 'pricingMode', this.value)">
+                                <option value="PER_STARTED_HOUR" ${r.pricingMode==='PER_STARTED_HOUR'?'selected':''}>Başlayan Saat</option>
+                                <option value="PER_FULL_HOUR" ${r.pricingMode==='PER_FULL_HOUR'?'selected':''}>Tam Saat</option>
+                            </select>
+                        </td>
+                        <td><input type="number" value="${r.dailyMax}" style="width:70px" onchange="app.updateRule(${idx}, 'dailyMax', this.value)"></td>
+                        <td><button class="btn-danger" onclick="app.removeRule(${idx})">X</button></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            updateRule(idx, field, val) {
+                const rules = this.state.settings.pricingRules;
+                if (field === 'baseFee' || field === 'hourlyFee' || field === 'dailyMax') val = parseFloat(val);
+                rules[idx][field] = val;
+            }
+
+            addRuleRow() {
+                const id = prompt("Benzersiz ID (Örn: VAN, TRUCK):").toUpperCase();
+                if(!id) return;
+                this.state.settings.pricingRules.push({
+                    id: id, label: 'Yeni Tip', baseFee: 0, hourlyFee: 0, pricingMode: 'PER_STARTED_HOUR', dailyMax: 0
+                });
+                this.renderRulesTable();
+            }
+
+            removeRule(idx) {
+                this.state.settings.pricingRules.splice(idx, 1);
+                this.renderRulesTable();
+            }
+
+            async handleSettingsSave(e) {
+                e.preventDefault();
+                const s = this.state.settings;
+                s.parkingName = document.getElementById('set-name').value;
+                s.currency = document.getElementById('set-currency').value;
+                s.graceMinutes = parseInt(document.getElementById('set-grace').value);
+                s.roundingPolicy = document.getElementById('set-rounding').value;
+                s.lostTicketFee = parseFloat(document.getElementById('set-lost-fee').value);
+                
+                await this.db.saveSettings(s);
+                alert('Ayarlar kaydedildi!');
+                document.getElementById('header-parking-name').textContent = s.parkingName;
+            }
+
+            showPrintModal(type, ticket) {
+                const modal = document.getElementById('print-modal');
+                const pName = document.getElementById('p-parking-name');
+                const pDate = document.getElementById('p-datetime');
+                const pBody = document.getElementById('p-body');
+                const pBarcode = document.getElementById('p-barcode');
+
+                pName.textContent = this.state.settings.parkingName.toUpperCase();
+                pDate.textContent = new Date().toLocaleString('tr-TR');
+                pBarcode.textContent = ticket.ticketNo;
+
+                if (type === 'ENTRY') {
+                    pBody.innerHTML = `
+                        <div style="font-size: 1.5rem; font-weight: bold; margin: 10px 0;">GİRİŞ FİŞİ</div>
+                        <div class="receipt-row"><span>Plaka:</span> <strong>${ticket.plate}</strong></div>
+                        <div class="receipt-row"><span>Araç Tipi:</span> <span>${ticket.vehicleTypeId}</span></div>
+                        <div class="receipt-row"><span>Giriş:</span> <span>${new Date(ticket.entryTime).toLocaleTimeString('tr-TR')}</span></div>
+                    `;
+                } else if (type === 'EXIT') {
+                    pBody.innerHTML = `
+                        <div style="font-size: 1.5rem; font-weight: bold; margin: 10px 0;">ÖDEME MAKBUZU</div>
+                        <div class="receipt-row"><span>Plaka:</span> <strong>${ticket.plate}</strong></div>
+                        <div class="receipt-row"><span>Giriş:</span> <span>${new Date(ticket.entryTime).toLocaleTimeString('tr-TR')}</span></div>
+                        <div class="receipt-row"><span>Çıkış:</span> <span>${new Date(ticket.exitTime).toLocaleTimeString('tr-TR')}</span></div>
+                        <div class="receipt-row"><span>Süre:</span> <span>${ticket.durationMinutes} dk</span></div>
+                        <div class="receipt-total">TOPLAM: ${ticket.paidAmount.toFixed(2)} ${this.state.settings.currency}</div>
+                    `;
+                }
+
+                modal.classList.remove('hidden');
+            }
+
+            closePrintModal() {
+                document.getElementById('print-modal').classList.add('hidden');
+            }
+        }
+
+        const app = new App();
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            app.init();
+            
+            document.getElementById('login-form').onsubmit = (e) => {
+                e.preventDefault();
+                app.login(
+                    document.getElementById('login-company').value,
+                    document.getElementById('login-operator').value
+                );
+            };
+
+            document.getElementById('entry-form').onsubmit = (e) => app.handleEntry(e);
+            document.getElementById('exit-search-form').onsubmit = (e) => app.handleSearch(e);
+            document.getElementById('payment-form').onsubmit = (e) => app.handlePayment(e);
+            document.getElementById('settings-form').onsubmit = (e) => app.handleSettingsSave(e);
+        });
+
+    </script>
+</body>
+</html>
